@@ -1,0 +1,23 @@
+name: ollma-llm
+
+services:
+  marketmind-ollma-llm-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: marketmind-ollma-llm-api
+    ports:
+      - "${APP_PORT:-8005}:8005"
+    env_file:
+      - .env
+    # Ollama runs on the host, not in Compose. host.docker.internal lets the
+    # container reach the host's Ollama server (OLLAMA_BASE_URL default).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - marketmind-network
+    restart: unless-stopped
+
+networks:
+  marketmind-network:
+    driver: bridge
