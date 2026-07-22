@@ -1,27 +1,26 @@
-from pydantic import BaseModel, Field
+from typing import Any
+
+from pydantic import BaseModel
 
 
-class SignalEvidence(BaseModel):
-    code: str
-    label: str
-    score: float | None = None
-    band: str | None = None
-    meaning: str | None = None
-    # The detail carries the concrete numbers, e.g. for demand volume:
-    # "1526130 total monthly searches ...; population 212,812,405;
-    #  penetration 717.1 searches per 100k inhabitants ...".
-    detail: str | None = None
+class ChatRequest(BaseModel):
+    model: str
+    system: str | None = None
+    prompt: str
+    # A JSON Schema for Ollama structured outputs; sent as top-level "format".
+    format: dict[str, Any] | None = None
+    temperature: float = 0.3
+    # Falls back to settings.ollama_num_ctx when not provided.
+    num_ctx: int | None = None
 
 
-class CountryEvidence(BaseModel):
-    country: str  # ISO3 code
-    mos: float
-    mos_band: str
-    dimensions: dict[str, float] = Field(default_factory=dict)  # dimension sub-scores 0-100
-    signals: list[SignalEvidence] = Field(default_factory=list)
-
-
-class ExplainRequest(BaseModel):
-    product_name: str
-    language: str = "pt"  # output language of the narrative
-    countries: list[CountryEvidence] = Field(min_length=1)
+class VisionRequest(BaseModel):
+    model: str
+    system: str | None = None
+    prompt: str
+    # Raw base64 image payload; any "data:...;base64," prefix is stripped downstream.
+    image_base64: str
+    image_media_type: str = "image/jpeg"
+    format: dict[str, Any] | None = None
+    temperature: float = 0.3
+    num_ctx: int | None = None

@@ -7,7 +7,6 @@ class HealthResponse(BaseModel):
     ollama: str | None = None
 
 
-class ExplainResponse(BaseModel):
-    narrative: str
+class InferenceResponse(BaseModel):
+    content: str
     model: str
-    product_name: str

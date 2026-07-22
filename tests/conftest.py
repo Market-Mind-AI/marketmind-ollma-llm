@@ -21,50 +21,23 @@ def ollama_chat_url() -> str:
 
 
 @pytest.fixture
-def explain_payload() -> dict[str, Any]:
+def chat_payload() -> dict[str, Any]:
     return {
-        "product_name": "Whey Protein",
-        "language": "pt",
-        "countries": [
-            {
-                "country": "BRA",
-                "mos": 72.4,
-                "mos_band": "Alta",
-                "dimensions": {"demand": 80.0, "macro": 55.0, "digital": 68.0},
-                "signals": [
-                    {
-                        "code": "demand_volume",
-                        "label": "Volume de demanda",
-                        "score": 80.0,
-                        "band": "Alta",
-                        "meaning": "Volume absoluto de buscas mensais",
-                        "detail": (
-                            "1526130 total monthly searches; population 212,812,405; "
-                            "penetration 717.1 searches per 100k inhabitants"
-                        ),
-                    }
-                ],
-            },
-            {
-                "country": "PRT",
-                "mos": 61.0,
-                "mos_band": "Média",
-                "dimensions": {"demand": 45.0, "macro": 78.0, "digital": 82.0},
-                "signals": [
-                    {
-                        "code": "demand_volume",
-                        "label": "Volume de demanda",
-                        "score": 45.0,
-                        "band": "Média",
-                        "meaning": "Volume absoluto de buscas mensais",
-                        "detail": (
-                            "210500 total monthly searches; population 10,305,564; "
-                            "penetration 2042.6 searches per 100k inhabitants"
-                        ),
-                    }
-                ],
-            },
-        ],
+        "model": "qwen3:14b",
+        "system": "You are a helpful assistant.",
+        "prompt": "Say hello.",
+        "temperature": 0.3,
+    }
+
+
+@pytest.fixture
+def vision_payload() -> dict[str, Any]:
+    return {
+        "model": "qwen3-vl:8b-instruct",
+        "system": "Describe the image.",
+        "prompt": "What is in this picture?",
+        "image_base64": "aGVsbG8td29ybGQ=",
+        "image_media_type": "image/png",
     }
 
 

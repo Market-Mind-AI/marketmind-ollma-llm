@@ -10,7 +10,7 @@ from app.core.logging import logger
 
 # qwen3 is a reasoning model: even with "think": false the streamed content can
 # still contain <think>...</think> blocks. Strip them (DOTALL so they span
-# newlines) before returning the narrative to callers.
+# newlines) before returning the content to callers.
 _THINK_BLOCK = re.compile(r"<think>.*?</think>", re.DOTALL)
 
 # Retry only transient upstream failures (timeouts / 5xx). A non-retryable
@@ -31,27 +31,37 @@ def strip_think(content: str) -> str:
 class OllamaClient:
     def __init__(self) -> None:
         self._base_url = settings.ollama_base_url.rstrip("/")
-        self._model = settings.ollama_model
         self._timeout = settings.ollama_timeout
         self._num_ctx = settings.ollama_num_ctx
 
     @RETRY_DECORATOR
-    async def chat(self, system_prompt: str, user_message: str) -> str:
-        """Call Ollama's chat API and return the model text with reasoning blocks stripped."""
+    async def chat(
+        self,
+        model: str,
+        messages: list[dict[str, Any]],
+        format: dict[str, Any] | None = None,
+        temperature: float = 0.3,
+        num_ctx: int | None = None,
+    ) -> str:
+        """Call Ollama's chat API and return the model text with reasoning blocks stripped.
+
+        `messages` is passed through as-is, so a message dict may carry an `images`
+        list (raw base64 strings) for vision models. `format` (a JSON Schema) is
+        attached as the top-level Ollama structured-outputs field only when given.
+        """
         url = f"{self._base_url}/api/chat"
         body: dict[str, Any] = {
-            "model": self._model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_message},
-            ],
+            "model": model,
+            "messages": messages,
             "stream": False,
             "think": False,
             "options": {
-                "temperature": 0.3,
-                "num_ctx": self._num_ctx,
+                "temperature": temperature,
+                "num_ctx": num_ctx if num_ctx is not None else self._num_ctx,
             },
         }
+        if format is not None:
+            body["format"] = format
 
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
@@ -80,12 +90,12 @@ class OllamaClient:
         if not content:
             raise OllamaClientError("Ollama response contained no message content")
 
-        narrative = strip_think(content)
-        if not narrative:
+        stripped = strip_think(content)
+        if not stripped:
             raise OllamaClientError("Ollama response was empty after stripping reasoning blocks")
 
-        logger.info(f"Ollama chat completed | model={self._model} | chars={len(narrative)}")
-        return narrative
+        logger.info(f"Ollama chat completed | model={model} | chars={len(stripped)}")
+        return stripped
 
     async def health(self) -> bool:
         """Best-effort availability check against Ollama's tags endpoint."""
