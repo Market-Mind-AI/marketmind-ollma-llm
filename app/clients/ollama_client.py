@@ -5,7 +5,7 @@ import httpx
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from app.core.config import settings
-from app.core.exceptions import OllamaClientError, OllamaTimeoutError
+from app.core.exceptions import OllamaClientError, OllamaTimeoutError, OllamaUpstreamError
 from app.core.logging import logger
 
 # qwen3 is a reasoning model: even with "think": false the streamed content can
@@ -13,12 +13,15 @@ from app.core.logging import logger
 # newlines) before returning the content to callers.
 _THINK_BLOCK = re.compile(r"<think>.*?</think>", re.DOTALL)
 
-# Retry only transient upstream failures (timeouts / 5xx). A non-retryable
-# client error (bad request, malformed response) fails fast.
+# Retry only transient upstream failures: timeouts and 5xx. Everything else —
+# a 4xx, a reply that does not parse, an empty answer, a host that cannot be
+# reached — is OllamaClientError and fails fast. It used to retry that class
+# too, which made a bad model name cost three attempts and, with a 300 s
+# timeout, a worst case over fifteen minutes before the caller heard anything.
 RETRY_DECORATOR = retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=2, min=2, max=30),
-    retry=retry_if_exception_type((OllamaTimeoutError, OllamaClientError)),
+    retry=retry_if_exception_type((OllamaTimeoutError, OllamaUpstreamError)),
     reraise=True,
 )
 
@@ -68,7 +71,7 @@ class OllamaClient:
                 response = await client.post(url, json=body)
 
                 if response.status_code >= 500:
-                    raise OllamaClientError(f"Ollama server error {response.status_code}: {url}")
+                    raise OllamaUpstreamError(f"Ollama server error {response.status_code}: {url}")
 
                 response.raise_for_status()
 

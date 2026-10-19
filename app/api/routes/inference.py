@@ -3,7 +3,8 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 
 from app.clients.ollama_client import OllamaClient
-from app.core.exceptions import OllamaClientError, OllamaTimeoutError
+from app.core.config import settings
+from app.core.exceptions import OllamaError
 from app.core.logging import logger
 from app.schemas.requests import ChatRequest, VisionRequest
 from app.schemas.responses import InferenceResponse
@@ -29,7 +30,10 @@ def _strip_data_uri(image_base64: str) -> str:
     return image_base64
 
 
-async def _run(model: str, messages: list[dict[str, Any]], request: ChatRequest | VisionRequest) -> InferenceResponse:
+async def _run(messages: list[dict[str, Any]], request: ChatRequest | VisionRequest) -> InferenceResponse:
+    # The caller picks the model; OLLAMA_MODEL is only what answers when it
+    # does not. Every MarketMind caller sends one.
+    model = request.model or settings.ollama_model
     try:
         content = await OllamaClient().chat(
             model=model,
@@ -38,12 +42,10 @@ async def _run(model: str, messages: list[dict[str, Any]], request: ChatRequest 
             temperature=request.temperature,
             num_ctx=request.num_ctx,
         )
-    except OllamaTimeoutError as e:
-        logger.error(f"Ollama timeout: {e.message}")
-        raise HTTPException(status_code=504, detail=e.message) from e
-    except OllamaClientError as e:
-        logger.error(f"Ollama client error: {e.message}")
-        raise HTTPException(status_code=502, detail=e.message) from e
+    except OllamaError as e:
+        # 504 for a timeout, 502 for everything else: the exception carries it.
+        logger.error(f"Ollama {type(e).__name__}: {e.message}")
+        raise HTTPException(status_code=e.status_code, detail=e.message) from e
 
     return InferenceResponse(content=content, model=model)
 
@@ -56,7 +58,7 @@ async def _run(model: str, messages: list[dict[str, Any]], request: ChatRequest 
 )
 async def chat(request: ChatRequest) -> InferenceResponse:
     messages = _build_messages(request.system, {"role": "user", "content": request.prompt})
-    return await _run(request.model, messages, request)
+    return await _run(messages, request)
 
 
 @router.post(
@@ -72,4 +74,4 @@ async def vision(request: VisionRequest) -> InferenceResponse:
         "images": [_strip_data_uri(request.image_base64)],
     }
     messages = _build_messages(request.system, user_message)
-    return await _run(request.model, messages, request)
+    return await _run(messages, request)

@@ -5,6 +5,7 @@ import httpx
 import pytest
 import respx
 
+from app.core.config import settings
 from tests.conftest import ollama_response
 
 
@@ -40,9 +41,7 @@ async def test_chat_forwards_format_schema(
 ) -> None:
     schema = {"type": "object", "properties": {"answer": {"type": "string"}}, "required": ["answer"]}
     payload = {**chat_payload, "format": schema}
-    route = respx.post(ollama_chat_url).mock(
-        return_value=httpx.Response(200, json=ollama_response('{"answer": "hi"}'))
-    )
+    route = respx.post(ollama_chat_url).mock(return_value=httpx.Response(200, json=ollama_response('{"answer": "hi"}')))
 
     response = await async_client.post("/chat", json=payload)
 
@@ -53,9 +52,7 @@ async def test_chat_forwards_format_schema(
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_chat_no_system_omits_system_message(
-    async_client: httpx.AsyncClient, ollama_chat_url: str
-) -> None:
+async def test_chat_no_system_omits_system_message(async_client: httpx.AsyncClient, ollama_chat_url: str) -> None:
     route = respx.post(ollama_chat_url).mock(return_value=httpx.Response(200, json=ollama_response("ok")))
 
     response = await async_client.post("/chat", json={"model": "qwen3:14b", "prompt": "hi"})
@@ -86,9 +83,7 @@ async def test_chat_num_ctx_override(
 async def test_vision_happy_path_sends_image(
     async_client: httpx.AsyncClient, ollama_chat_url: str, vision_payload: dict[str, Any]
 ) -> None:
-    route = respx.post(ollama_chat_url).mock(
-        return_value=httpx.Response(200, json=ollama_response("A cat."))
-    )
+    route = respx.post(ollama_chat_url).mock(return_value=httpx.Response(200, json=ollama_response("A cat.")))
 
     response = await async_client.post("/vision", json=vision_payload)
 
@@ -153,6 +148,32 @@ async def test_chat_empty_content_returns_502(
     response = await async_client.post("/chat", json=chat_payload)
 
     assert response.status_code == 502
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_chat_ollama_4xx_returns_502_without_retrying(
+    async_client: httpx.AsyncClient, ollama_chat_url: str, chat_payload: dict[str, Any]
+) -> None:
+    route = respx.post(ollama_chat_url).mock(return_value=httpx.Response(400, json={"error": "bad request"}))
+
+    response = await async_client.post("/chat", json=chat_payload)
+
+    assert response.status_code == 502
+    assert route.call_count == 1
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_chat_without_model_uses_the_default(async_client: httpx.AsyncClient, ollama_chat_url: str) -> None:
+    route = respx.post(ollama_chat_url).mock(return_value=httpx.Response(200, json=ollama_response("ok")))
+
+    response = await async_client.post("/chat", json={"prompt": "hi"})
+
+    assert response.status_code == 200
+    assert response.json()["model"] == settings.ollama_model
+    body = json.loads(route.calls.last.request.content)
+    assert body["model"] == settings.ollama_model
 
 
 @pytest.mark.asyncio

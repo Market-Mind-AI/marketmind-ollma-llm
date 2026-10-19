@@ -3,9 +3,18 @@ from typing import Any
 
 import httpx
 import pytest
+from tenacity import wait_none
 
+from app.clients.ollama_client import OllamaClient
 from app.core.config import settings
 from app.main import app
+
+
+@pytest.fixture(autouse=True)
+def no_retry_wait(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Retry without sleeping. The attempts are what the tests assert on; the
+    backoff between them made the suite take 36 s for nothing."""
+    monkeypatch.setattr(OllamaClient.chat.retry, "wait", wait_none())
 
 
 @pytest.fixture

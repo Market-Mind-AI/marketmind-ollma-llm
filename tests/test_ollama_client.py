@@ -5,7 +5,7 @@ import pytest
 import respx
 
 from app.clients.ollama_client import OllamaClient
-from app.core.exceptions import OllamaClientError, OllamaTimeoutError
+from app.core.exceptions import OllamaClientError, OllamaTimeoutError, OllamaUpstreamError
 from tests.conftest import ollama_response
 
 
@@ -31,9 +31,7 @@ async def test_chat_success_strips_think(ollama_chat_url: str) -> None:
 @pytest.mark.asyncio
 @respx.mock
 async def test_chat_sends_expected_body(ollama_chat_url: str) -> None:
-    route = respx.post(ollama_chat_url).mock(
-        return_value=httpx.Response(200, json=ollama_response("Narrative."))
-    )
+    route = respx.post(ollama_chat_url).mock(return_value=httpx.Response(200, json=ollama_response("Narrative.")))
 
     await OllamaClient().chat("qwen3:14b", _messages(), temperature=0.5, num_ctx=2048)
 
@@ -85,26 +83,68 @@ async def test_chat_forwards_images_in_message(ollama_chat_url: str) -> None:
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_chat_server_error_raises_client_error(ollama_chat_url: str) -> None:
-    respx.post(ollama_chat_url).mock(return_value=httpx.Response(500, text="boom"))
+async def test_chat_server_error_is_retried_three_times(ollama_chat_url: str) -> None:
+    route = respx.post(ollama_chat_url).mock(return_value=httpx.Response(500, text="boom"))
 
-    with pytest.raises(OllamaClientError):
+    with pytest.raises(OllamaUpstreamError):
         await OllamaClient().chat("qwen3:14b", _messages())
+
+    assert route.call_count == 3
 
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_chat_timeout_raises_timeout_error(ollama_chat_url: str) -> None:
-    respx.post(ollama_chat_url).mock(side_effect=httpx.TimeoutException("timeout"))
+async def test_chat_server_error_recovers_on_a_later_attempt(ollama_chat_url: str) -> None:
+    route = respx.post(ollama_chat_url).mock(
+        side_effect=[httpx.Response(503, text="loading"), httpx.Response(200, json=ollama_response("ok"))]
+    )
+
+    assert await OllamaClient().chat("qwen3:14b", _messages()) == "ok"
+    assert route.call_count == 2
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_chat_timeout_is_retried_three_times(ollama_chat_url: str) -> None:
+    route = respx.post(ollama_chat_url).mock(side_effect=httpx.TimeoutException("timeout"))
 
     with pytest.raises(OllamaTimeoutError):
         await OllamaClient().chat("qwen3:14b", _messages())
 
+    assert route.call_count == 3
+
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_chat_empty_content_raises(ollama_chat_url: str) -> None:
-    respx.post(ollama_chat_url).mock(return_value=httpx.Response(200, json=ollama_response("")))
+async def test_chat_client_error_fails_fast(ollama_chat_url: str) -> None:
+    # A 4xx is the request being wrong — an unknown model, say — and asking
+    # again changes nothing.
+    route = respx.post(ollama_chat_url).mock(return_value=httpx.Response(404, json={"error": "model not found"}))
+
+    with pytest.raises(OllamaClientError) as exc_info:
+        await OllamaClient().chat("nope:1b", _messages())
+
+    assert not isinstance(exc_info.value, OllamaUpstreamError)
+    assert route.call_count == 1
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_chat_malformed_json_fails_fast(ollama_chat_url: str) -> None:
+    route = respx.post(ollama_chat_url).mock(return_value=httpx.Response(200, text="not json"))
 
     with pytest.raises(OllamaClientError):
         await OllamaClient().chat("qwen3:14b", _messages())
+
+    assert route.call_count == 1
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_chat_empty_content_fails_fast(ollama_chat_url: str) -> None:
+    route = respx.post(ollama_chat_url).mock(return_value=httpx.Response(200, json=ollama_response("")))
+
+    with pytest.raises(OllamaClientError):
+        await OllamaClient().chat("qwen3:14b", _messages())
+
+    assert route.call_count == 1
