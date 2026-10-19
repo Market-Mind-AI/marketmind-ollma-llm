@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "marketmind-ollma-llm"
 version = "0.1.0"
-description = "Stateless LLM proxy that turns a MarketMind MOS evidence packet into a business-facing narrative via a local Ollama model"
+description = "Stateless Ollama gateway for MarketMind: forwards text and vision inference to a local model; the caller owns the prompt and picks the model"
 authors = ["MarketMind Team"]
 readme = "README.md"
 packages = [{ include = "app" }]
