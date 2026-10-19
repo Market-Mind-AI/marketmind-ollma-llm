@@ -1,0 +1,48 @@
+name: Test
+
+# Tests only, for now. The sibling MarketMind services build an arm64 image
+# and bump its tag in equifina/beprofit-infra-manifests from this same
+# trigger (see marketmind-pytrends/.github/workflows/build-and-push.yml);
+# this service has a Dockerfile but no values file in infra-manifests yet, so
+# there is nothing to bump and the image steps would only fail. Add them when
+# the service gets deployed, as a build-and-push job that `needs: test`.
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    # The suite mocks the Ollama HTTP calls with respx (tests/conftest.py) and
+    # every setting in app/core/config.py has a default, so the job needs no
+    # Ollama, no services and no env.
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Poetry
+        # Same pin as the Dockerfile, so the resolver that runs the tests is
+        # the one that builds the image.
+        run: pip install poetry==1.8.4
+
+      - name: Install dependencies
+        # Unlike the sibling services this repo versions poetry.lock, written
+        # by Poetry 2.x (lock-version 2.1). Poetry 1.8 installs from it fine
+        # but prints "lock file might not be compatible"; that line is noise,
+        # not a failure.
+        run: poetry install --no-interaction --no-root
+
+      - name: Run tests
+        run: poetry run pytest -q
